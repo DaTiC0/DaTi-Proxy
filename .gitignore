@@ -1,0 +1,3 @@
+# here is files wich we want to exclude from the repository
+.env
+test.sh
