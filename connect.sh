@@ -62,19 +62,18 @@ echo "Proxy server: http://localhost:3128"
 function cleanup() {
     echo 
     echo "Cleaning up and stopping the proxy server"
-    # Check if the Docker container is running
-    if docker ps -q -f name=squid-proxy >/dev/null; then
-        # Stop the Docker container
-        docker stop squid-proxy
-        # Remove the Docker container
-        docker rm squid-proxy
+
+    echo "Checking if the Docker container is running"
+    if docker ps -q -f name=squid-proxy &>/dev/null; then
+        echo "Stopping and removing Docker container..."
+        docker stop squid-proxy || echo "Warning: Failed to stop container"
+        docker rm squid-proxy || echo "Warning: Failed to remove container"
     fi
 
-    # Check if the proxy configuration file exists on the remote server
     echo "Checking if the proxy configuration file exists on the remote server"
     if sshpass -p "$remote_password" ssh -p "$remote_port" "$remote_username"@"$remote_server" "[ -f /etc/apt/apt.conf.d/33proxy ]"; then
-        # Remove the proxy configuration file from APT configuration
-        sshpass -p "$remote_password" ssh -p "$remote_port" "$remote_username"@"$remote_server" "sudo -S rm /etc/apt/apt.conf.d/33proxy <<< \"$remote_password\""
+        echo "Removing proxy configuration from remote server..."
+        sshpass -p "$remote_password" ssh -p "$remote_port" "$remote_username"@"$remote_server" "sudo -S rm /etc/apt/apt.conf.d/33proxy <<< \"$remote_password\"" || echo "Warning: Failed to remove proxy configuration"
     fi
 
     # Check if the SSH connection is still active
