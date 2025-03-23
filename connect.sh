@@ -47,7 +47,7 @@ echo "Connected to the remote server and created a remote port forwarding"
 
 # Check if the Docker container is already running
 echo "Checking if the Docker container with a Squid proxy server is already running"
-if docker ps -q -f name=squid-proxy >/dev/null; then
+if ! docker ps -q -f name=squid-proxy >/dev/null; then
     # Start a Docker container with a Squid proxy "ubuntu/squid" server
     echo "Starting the Docker container with a Squid proxy server"
     docker run -d --name squid-proxy -p 3128:3128 ubuntu/squid:latest
