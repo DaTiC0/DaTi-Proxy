@@ -46,7 +46,7 @@ The script requires the following dependencies to be installed on the local mach
 
 ```bash
 # Clone the repository
-git clone https://github.com/username/DaTi-Proxy.git
+git clone https://github.com/DaTiC0/DaTi-Proxy.git
 cd DaTi-Proxy
 
 # Make the script executable
