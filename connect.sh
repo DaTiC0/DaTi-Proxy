@@ -3,15 +3,10 @@
 # Description: Sets up an SSH tunnel and Squid proxy to enable internet access on remote Ubuntu servers
 # Usage: ./connect.sh
 
-echo "Enter the remote server IP address: "
-read -r remote_server
-
-echo "Enter the remote server username (default $USER): "
-read -r remote_username
-
-echo "Enter the remote server port (default 22): "
-read -r remote_port
-
+# Collect connection details from the user
+read -r -p "Enter the remote server IP address: " remote_server
+read -r -p "Enter the remote server username [$USER]: " remote_username
+read -r -p "Enter the remote server port [22]: " remote_port
 read -rs -p "Enter the remote server password: " remote_password
 
 remote_port=${remote_port:-22}
