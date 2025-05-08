@@ -57,7 +57,6 @@ function cleanup() {
     fi
     echo "Checking if the SSH connection is still active"
     if pgrep -f "ssh -N -R 3128:localhost:3128 -p $remote_port $remote_username@$remote_server" >/dev/null; then
-        # Close the SSH connection
         echo "Closing the SSH connection"
         pkill -f "ssh -N -R 3128:localhost:3128 -p $remote_port $remote_username@$remote_server"
     fi
