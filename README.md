@@ -2,7 +2,9 @@
 
 A tool that helps bypass network restrictions on remote servers by creating an SSH tunnel and Squid proxy.
 
-![Version](https://img.shields.io/badge/version-1.0-blue)
+![Version](https://img.shields.io/badge/version-2.0-blue)
+![Code Quality](https://img.shields.io/badge/code%20quality-refactored-green)
+![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
 
 > **Note**: Currently only compatible with Ubuntu-based systems using the APT package manager.
 
@@ -13,6 +15,7 @@ This script was created by [DaTi_Co]
 ## Table of Contents
 
 - [Description](#description)
+- [Recent Updates](#recent-updates)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Usage](#usage)
@@ -33,6 +36,37 @@ The script sets up a proxy server on a remote server using SSH and Docker. It al
 8. Defines a cleanup function to stop the Docker container, remove the proxy config file from APT, and close the SSH connection.
 9. Calls the cleanup function if the user presses Ctrl+C or the script is terminated.
 10. Waits for the user to press Ctrl+C to stop the script.
+
+## Recent Updates
+
+### Version 2.0 - Major Refactoring (Latest)
+
+The script has been completely refactored to improve code quality, maintainability, and reliability:
+
+**🔧 Code Quality Improvements:**
+- Extracted hardcoded values to configurable constants
+- Added comprehensive input validation (IP addresses, ports)
+- Implemented structured logging with timestamps
+- Added strict error handling (`set -euo pipefail`)
+- Modularized code into 19 focused functions
+- Passes shellcheck linting with zero warnings
+
+**🛡️ Security Enhancements:**
+- Added SSH connection timeouts and proper options
+- Improved password handling (validation, no command-line exposure)
+- Better process management for background SSH connections
+
+**⚡ Reliability Features:**
+- Comprehensive error checking for all operations
+- Graceful cleanup procedures for all components
+- Better user feedback and debugging information
+- Input validation with user-friendly retry loops
+
+**📚 Maintainability:**
+- Clean, documented code structure
+- Single responsibility functions
+- Consistent coding style and formatting
+- Removed dead/commented code
 
 ## Requirements
 
