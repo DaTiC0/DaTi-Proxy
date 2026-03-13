@@ -3,265 +3,66 @@
 # Description: Sets up an SSH tunnel and Squid proxy to enable internet access on remote Ubuntu servers
 # Usage: ./connect.sh
 
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Collect connection details from the user
+read -r -p "Enter the remote server IP address: " remote_server
+read -r -p "Enter the remote server username [$USER]: " remote_username
+read -r -p "Enter the remote server port [22]: " remote_port
+read -rs -p "Enter the remote server password: " remote_password
+echo
 
-# Configuration constants
-readonly PROXY_PORT=3128
-readonly CONTAINER_NAME="squid-proxy"
-readonly PROXY_CONFIG_FILE="/etc/apt/apt.conf.d/33proxy"
-readonly DOCKER_IMAGE="ubuntu/squid:latest"
+remote_port=${remote_port:-22}
+remote_username=${remote_username:-$USER}
 
-# Global variables
-remote_server=""
-remote_username=""
-remote_port=""
-remote_password=""
+echo "Checking if the proxy configuration file exists on the remote server"
+if ! sshpass -p "$remote_password" ssh -p "$remote_port" "$remote_username"@"$remote_server" "[ -f /etc/apt/apt.conf.d/33proxy ]"; then
+    echo "Adding proxy configuration to the remote server's APT configuration"
+    sshpass -p "$remote_password" ssh -p "$remote_port" "$remote_username"@"$remote_server" "echo 'Acquire::http::Proxy \"http://localhost:3128\";' | sudo -S tee /etc/apt/apt.conf.d/33proxy <<< \"$remote_password\""
+else
+    echo "Proxy configuration file already exists on the remote server"
+fi
 
-# Function to log messages with timestamp
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-}
+# Connect to the remote server using SSH and create a remote port forwarding
+sshpass -p "$remote_password" ssh -N -R 3128:localhost:3128 -p "$remote_port" "$remote_username"@"$remote_server" &
+echo "Connected to the remote server and created a remote port forwarding"
 
-# Function to log error messages
-log_error() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $*" >&2
-}
+# Check if the Docker container is already running
+echo "Checking if the Docker container with a Squid proxy server is already running"
+if ! docker ps -q -f name=squid-proxy &>/dev/null; then
+    echo "Starting the Docker container with a Squid proxy server"
+    docker run -d --name squid-proxy -p 3128:3128 ubuntu/squid:latest
+    echo "Changing Squid configuration to allow all requests"
+    docker exec squid-proxy sed -i 's/http_access deny all/http_access allow all/g' /etc/squid/squid.conf
+fi
 
-# Function to validate IP address
-validate_ip() {
-    local ip="$1"
-    if [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-        IFS='.' read -ra ADDR <<< "$ip"
-        for i in "${ADDR[@]}"; do
-            if [[ $i -gt 255 ]]; then
-                return 1
-            fi
-        done
-        return 0
-    fi
-    return 1
-}
+echo "Proxy server: http://localhost:3128"
 
-# Function to validate port number
-validate_port() {
-    local port="$1"
-    if [[ $port =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ]; then
-        return 0
-    fi
-    return 1
-}
-
-# Function to collect and validate user input
-collect_user_input() {
-    log "Collecting connection details..."
-    
-    while true; do
-        read -r -p "Enter the remote server IP address: " remote_server
-        if validate_ip "$remote_server"; then
-            break
-        else
-            log_error "Invalid IP address format. Please try again."
-        fi
-    done
-    
-    read -r -p "Enter the remote server username [$USER]: " remote_username
-    remote_username=${remote_username:-$USER}
-    
-    while true; do
-        read -r -p "Enter the remote server port [22]: " remote_port
-        remote_port=${remote_port:-22}
-        if validate_port "$remote_port"; then
-            break
-        else
-            log_error "Invalid port number. Please enter a port between 1-65535."
-        fi
-    done
-    
-    read -rs -p "Enter the remote server password: " remote_password
-    echo  # New line after password input
-    
-    if [[ -z "$remote_password" ]]; then
-        log_error "Password cannot be empty"
-        exit 1
-    fi
-}
-
-# Function to execute SSH commands with error handling
-execute_ssh_command() {
-    local command="$1"
-    local description="${2:-Executing SSH command}"
-    
-    log "$description"
-    if ! sshpass -p "$remote_password" ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -p "$remote_port" "$remote_username"@"$remote_server" "$command"; then
-        log_error "Failed: $description"
-        return 1
-    fi
-    return 0
-}
-
-# Function to check if proxy configuration exists on remote server
-check_proxy_config() {
-    execute_ssh_command "[ -f $PROXY_CONFIG_FILE ]" "Checking if proxy configuration file exists"
-}
-
-# Function to add proxy configuration to remote server
-add_proxy_config() {
-    log "Adding proxy configuration to remote server APT"
-    local proxy_config="Acquire::http::Proxy \"http://localhost:$PROXY_PORT\";"
-    if ! execute_ssh_command "echo '$proxy_config' | sudo -S tee $PROXY_CONFIG_FILE <<< \"$remote_password\"" "Adding proxy configuration"; then
-        log_error "Failed to add proxy configuration"
-        exit 1
-    fi
-}
-
-# Function to manage proxy configuration
-manage_proxy_config() {
-    log "Managing proxy configuration on remote server"
-    if ! check_proxy_config; then
-        add_proxy_config
-    else
-        log "Proxy configuration file already exists on remote server"
-    fi
-}
-
-# Function to create SSH tunnel
-create_ssh_tunnel() {
-    log "Creating SSH tunnel with remote port forwarding"
-    sshpass -p "$remote_password" ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -N -R "$PROXY_PORT:localhost:$PROXY_PORT" -p "$remote_port" "$remote_username"@"$remote_server" &
-    local ssh_pid=$!
-    
-    # Give the SSH connection a moment to establish
-    sleep 2
-    
-    # Check if SSH process is still running
-    if ! kill -0 $ssh_pid 2>/dev/null; then
-        log_error "Failed to create SSH tunnel"
-        exit 1
-    fi
-    
-    log "SSH tunnel created successfully"
-}
-
-# Function to check if Docker container is running
-is_container_running() {
-    docker ps -q -f name="$CONTAINER_NAME" &>/dev/null
-}
-
-# Function to start Docker container with Squid proxy
-start_squid_container() {
-    log "Starting Docker container with Squid proxy server"
-    if ! docker run -d --name "$CONTAINER_NAME" -p "$PROXY_PORT:$PROXY_PORT" "$DOCKER_IMAGE"; then
-        log_error "Failed to start Docker container"
-        exit 1
-    fi
-    
-    # Wait for container to be ready
-    sleep 5
-    
-    log "Configuring Squid to allow all requests"
-    if ! docker exec "$CONTAINER_NAME" sed -i 's/http_access deny all/http_access allow all/g' /etc/squid/squid.conf; then
-        log_error "Failed to configure Squid"
-        exit 1
-    fi
-    
-    # Restart squid to apply configuration
-    docker exec "$CONTAINER_NAME" service squid restart
-}
-
-# Function to manage Docker container
-manage_docker_container() {
-    log "Managing Docker container"
-    if ! is_container_running; then
-        start_squid_container
-    else
-        log "Docker container with Squid proxy is already running"
-    fi
-}
-
-# Function to stop and remove Docker container
-cleanup_docker() {
-    log "Checking if Docker container is running"
-    if is_container_running; then
-        log "Stopping and removing Docker container..."
-        if ! docker stop "$CONTAINER_NAME" 2>/dev/null; then
-            log_error "Failed to stop container"
-        fi
-        if ! docker rm "$CONTAINER_NAME" 2>/dev/null; then
-            log_error "Failed to remove container"
-        fi
-    else
-        log "Docker container is not running"
-    fi
-}
-
-# Function to remove proxy configuration from remote server
-cleanup_proxy_config() {
-    log "Checking if proxy configuration file exists on remote server"
-    if check_proxy_config; then
-        log "Removing proxy configuration from remote server..."
-        if ! execute_ssh_command "sudo -S rm $PROXY_CONFIG_FILE <<< \"$remote_password\"" "Removing proxy configuration"; then
-            log_error "Failed to remove proxy configuration"
-        fi
-    else
-        log "Proxy configuration file does not exist on remote server"
-    fi
-}
-
-# Function to close SSH connection
-cleanup_ssh() {
-    log "Checking if SSH connection is still active"
-    local ssh_pattern="ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -N -R $PROXY_PORT:localhost:$PROXY_PORT -p $remote_port $remote_username@$remote_server"
-    if pgrep -f "$ssh_pattern" >/dev/null; then
-        log "Closing SSH connection"
-        pkill -f "$ssh_pattern"
-    else
-        log "SSH connection is not active"
-    fi
-}
-
-# Main cleanup function
+# stop the Docker container, remove the proxy config file from APT, and close the SSH connection 
 cleanup() {
-    echo
-    log "Cleaning up and stopping proxy server"
-    cleanup_docker
-    cleanup_proxy_config
-    cleanup_ssh
-    log "Cleanup completed"
+    echo 
+    echo "Cleaning up and stopping the proxy server"
+    echo "Checking if the Docker container is running"
+    if docker ps -q -f name=squid-proxy &>/dev/null; then
+        echo "Stopping and removing Docker container..."
+        docker stop squid-proxy || echo "Warning: Failed to stop container"
+        docker rm squid-proxy || echo "Warning: Failed to remove container"
+    fi
+    echo "Checking if the proxy configuration file exists on the remote server"
+    if sshpass -p "$remote_password" ssh -p "$remote_port" "$remote_username"@"$remote_server" "[ -f /etc/apt/apt.conf.d/33proxy ]"; then
+        echo "Removing proxy configuration from remote server..."
+        sshpass -p "$remote_password" ssh -p "$remote_port" "$remote_username"@"$remote_server" "sudo -S rm /etc/apt/apt.conf.d/33proxy <<< \"$remote_password\"" || echo "Warning: Failed to remove proxy configuration"
+    fi
+    echo "Checking if the SSH connection is still active"
+    if pgrep -f "ssh -N -R 3128:localhost:3128 -p $remote_port $remote_username@$remote_server" >/dev/null; then
+        echo "Closing the SSH connection"
+        pkill -f "ssh -N -R 3128:localhost:3128 -p $remote_port $remote_username@$remote_server"
+    fi
+    echo "Cleaned up Docker container and removed proxy configuration from remote server"
 }
 
-# Function to display proxy information
-show_proxy_info() {
-    echo
-    log "=== PROXY SERVER READY ==="
-    log "Proxy server: http://localhost:$PROXY_PORT"
-    log "Configure your browser or applications to use this proxy"
-    log "Press Ctrl+C to stop the proxy server and clean up"
-    echo
-}
 
-# Main function
-main() {
-    log "Starting DaTi Proxy setup"
-    
-    # Collect user input
-    collect_user_input
-    
-    # Setup proxy configuration on remote server
-    manage_proxy_config
-    
-    # Create SSH tunnel
-    create_ssh_tunnel
-    
-    # Setup Docker container
-    manage_docker_container
-    
-    # Show proxy information
-    show_proxy_info
-    
-    # Setup cleanup trap and wait
-    trap cleanup EXIT
-    sleep infinity
-}
+# Call the cleanup function if the user presses Ctrl+C or the script is terminated
+trap cleanup EXIT
 
-# Execute main function
-main "$@"
+# Wait for the user to press Ctrl+C to stop the script
+echo "Press Ctrl+C to stop the proxy server and clean up"
+sleep infinity
