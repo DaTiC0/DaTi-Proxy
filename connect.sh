@@ -8,14 +8,10 @@ read -r -p "Enter the remote server IP address: " remote_server
 read -r -p "Enter the remote server username [$USER]: " remote_username
 read -r -p "Enter the remote server port [22]: " remote_port
 read -rs -p "Enter the remote server password: " remote_password
+echo
 
 remote_port=${remote_port:-22}
 remote_username=${remote_username:-$USER}
-
-# temporary hard-coded values for testing
-# Import variables from .env file
-# source "./.env"
-# temporary hard-coded values for testing
 
 echo "Checking if the proxy configuration file exists on the remote server"
 if ! sshpass -p "$remote_password" ssh -p "$remote_port" "$remote_username"@"$remote_server" "[ -f /etc/apt/apt.conf.d/33proxy ]"; then
@@ -31,7 +27,7 @@ echo "Connected to the remote server and created a remote port forwarding"
 
 # Check if the Docker container is already running
 echo "Checking if the Docker container with a Squid proxy server is already running"
-if ! docker ps -q -f name=squid-proxy >/dev/null; then
+if ! docker ps -q -f name=squid-proxy &>/dev/null; then
     echo "Starting the Docker container with a Squid proxy server"
     docker run -d --name squid-proxy -p 3128:3128 ubuntu/squid:latest
     echo "Changing Squid configuration to allow all requests"
@@ -41,7 +37,7 @@ fi
 echo "Proxy server: http://localhost:3128"
 
 # stop the Docker container, remove the proxy config file from APT, and close the SSH connection 
-function cleanup() {
+cleanup() {
     echo 
     echo "Cleaning up and stopping the proxy server"
     echo "Checking if the Docker container is running"
